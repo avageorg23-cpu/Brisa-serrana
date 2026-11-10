@@ -53,7 +53,6 @@
     h2{ margin:0 0 6px; font-size: clamp(1.4rem, 3.8vw, 1.85rem); font-weight: 800; }
     .subtitle{ margin:0 0 12px; font-size: clamp(.90rem, 2.6vw, .98rem); opacity:.9; }
 
-    /* Llamador de atención para 10% OFF */
     .promo-banner {
       background: linear-gradient(135deg, #d4af37, #aa7c11);
       color: #111;
@@ -237,6 +236,7 @@
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzHjhX5Ryfrqi4BWnU7krG88njIGzyqGk098r463Jr8nIOxi3mREgHRgdXf5_HKsp8sRQ/exec"; 
   const TIPO_CAMBIO_USD = 1000; 
 
+  // Precios de respaldo seguros por si la hoja TARIFAS tarda o falla
   const preciosFallback = {
     "DUPLEX": { 5: 105000 },
     "LOFT": { 4: 75000 },
@@ -280,10 +280,15 @@
 
   function obtenerPrecioBase() {
     const room = document.getElementById("bungalow").value;
-    if (!preciosDinámicos[room]) return 0;
-    const paxKeys = Object.keys(preciosDinámicos[room]);
-    if (paxKeys.length === 0) return 0;
-    return preciosDinámicos[room][paxKeys[0]] || 0;
+    // Si existen precios dinámicos cargados para este cuarto, los usamos
+    if (preciosDinámicos[room]) {
+      const paxKeys = Object.keys(preciosDinámicos[room]);
+      if (paxKeys.length > 0 && Number(preciosDinámicos[room][paxKeys[0]]) > 0) {
+        return Number(preciosDinámicos[room][paxKeys[0]]);
+      }
+    }
+    // Fallback de seguridad para evitar que devuelva 0
+    return preciosFallback[room] ? Object.values(preciosFallback[room])[0] : 80000;
   }
 
   function updatePriceLine(){
@@ -294,8 +299,8 @@
     const precioArs = obtenerPrecioBase();
 
     if (el) {
-      if (room === "ALPINA DE MONTAÑA" || precioArs === 0) {
-        el.textContent = room === "ALPINA DE MONTAÑA" ? "No disponible para reservas" : "Revisá los precios de este Alojamiento";
+      if (room === "ALPINA DE MONTAÑA") {
+        el.textContent = "No disponible para reservas";
         return;
       }
 
@@ -322,7 +327,7 @@
         updatePriceLine();
       }
     } catch (e) {
-      console.warn("No se pudo leer la hoja. Usando precios de respaldo.", e);
+      console.warn("Usando precios de respaldo.", e);
       updatePriceLine(); 
     }
   }
@@ -388,7 +393,7 @@
 
   async function loadOccupiedForRoom(room, forceRefresh = false){
     if (room === "ALPINA DE MONTAÑA") {
-      return new Set(); // Bloqueada por completo
+      return new Set();
     }
     if (!forceRefresh && occupiedCache.has(room)) {
       return occupiedCache.get(room);
@@ -441,7 +446,7 @@
       td.dataset.fecha = iso;
 
       if (room === "ALPINA DE MONTAÑA") {
-        td.className = "unavailable"; // Alpina totalmente bloqueada
+        td.className = "unavailable";
       } else if (date < new Date(new Date().setHours(0,0,0,0))) {
         td.className = "unavailable";
       } else if (occupied.has(iso)){
@@ -568,12 +573,12 @@
     let aplicaDescuento = nights >= 10;
     
     if (aplicaDescuento) {
-      subtotal = subtotal * 0.90; // 10% de descuento
+      subtotal = subtotal * 0.90; 
     }
 
     if (moneda === "ARS") {
-      const montoSenia = subtotal * 0.40; // Seña 40%
-      const montoRestante = subtotal * 0.60; // 60% en el hospedaje
+      const montoSenia = subtotal * 0.40; 
+      const montoRestante = subtotal * 0.60; 
 
       if (aplicaDescuento) {
         document.getElementById("amount-info").innerHTML = `Total con 10% OFF aplicado: <b>${fmtARS(subtotal)}</b> <span style="font-size:0.8rem; color:#2e7d32;">(¡Ahorraste un 10% por 10+ noches!)</span>`;
@@ -658,6 +663,11 @@
       return;
     }
 
+    if (!montoSenia || montoSenia <= 0) {
+      alert("El monto de la seña no es válido.");
+      return;
+    }
+
     payBtn.textContent = "Generando pago automatizado...";
     payBtn.classList.add("disabled");
 
@@ -673,7 +683,7 @@
       contacto: contacto,
       moneda: "ARS",
       noches: selection.nights,
-      montoTotal: montoSenia // Envía el 40% correspondiente a la seña
+      montoTotal: montoSenia 
     };
 
     try {
@@ -691,11 +701,17 @@
         console.error("Detalle del error:", result.message);
         payBtn.textContent = result.message ? result.message : "Error desconocido en pasarela";
         payBtn.style.background = "#b32a2a";
+        setTimeout(() => {
+          payBtn.textContent = "Pagar Seña con Mercado Pago (40%)";
+          payBtn.style.background = "#003366";
+          payBtn.classList.remove("disabled");
+        }, 4000);
       }
     } catch (e) {
       console.error("Error:", e);
       payBtn.textContent = "Error de conexión con el servidor";
       payBtn.style.background = "#b32a2a";
+      payBtn.classList.remove("disabled");
     }
   }
 
